@@ -17,17 +17,22 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.Toast;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutput;
 import java.io.DataOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.UUID;
@@ -143,7 +148,7 @@ public class MemberRegisterActivity extends AppCompatActivity {
                     handler.sendMessage(message);
                     return;
                 }else{
-                    String regex = "[0-9][a-z][A-Z][가-힣]";
+                    String regex = "[0-9]|[a-z]|[A-Z]|[가-힣]";
                     for(int i=0; i<name.length(); i++) {
                         String ch = name.charAt(i) + "";
                         Pattern p = Pattern.compile(regex);
@@ -242,6 +247,38 @@ public class MemberRegisterActivity extends AppCompatActivity {
                             ds.flush();
                             ds.close();
 
+                            //API Server에게 전송하고 문자열 응답을 받기 위한 준비
+                            BufferedReader br = new BufferedReader(
+                                    new InputStreamReader(con.getInputStream()));
+                            StringBuilder sb = new StringBuilder();
+
+                            while(true){
+                                String line = br.readLine();
+                                if(line == null){
+                                    break;
+                                }
+                                sb.append(line + "\n");
+                            }
+
+                            br.close();
+                            con.disconnect();
+                            Log.e("전송된 데이터", sb.toString());
+
+                            if(sb.toString().length() >= 1){
+                                //받아온 문자열을 JSON 객체로 변환
+                                JSONObject object = new JSONObject(sb.toString());
+                                //JSON 객체에서 email 키에 해당하는 값을 문자열로 저장
+                                String result = object.getString("email");
+                                if(email.equals(result)){
+                                    //회원 가입 성공
+                                    finish();
+
+                                }else{
+                                    //회원 가입 실패
+                                    message.obj = email;
+                                    handler.sendMessage(message);
+                                }
+                            }
                         }catch(Exception e){
                             message.obj = e.getLocalizedMessage();
                             handler.sendMessage(message);
