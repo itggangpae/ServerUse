@@ -1,9 +1,13 @@
 package com.adamsoft.serveruse;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.content.Context;
 import android.content.Intent;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -13,6 +17,9 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
+
+import com.pedro.library.AutoPermissions;
+import com.pedro.library.AutoPermissionsListener;
 
 import org.json.JSONObject;
 
@@ -24,14 +31,89 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 
-public class LoginActivity extends AppCompatActivity {
+
+public class LoginActivity extends AppCompatActivity implements AutoPermissionsListener {
     EditText emailinput, pwinput;
     Button btnlogin, btnregister;
+
+    Double latitude, longitude;
+
+    //권한 사용을 거부한 경우에 그 개수를 파악해주는 메서드
+    @Override
+    public void onDenied(int i, String[] strings) {
+        Toast.makeText(this, "거부한 권한 개수:" + strings.length,
+                Toast.LENGTH_LONG).show();
+    }
+
+    //권한 사용을 허용한 경우에 그 개수를 파악해주는 메서드
+    @Override
+    public void onGranted(int i, String[] strings) {
+        Toast.makeText(this, "허용한 권한 개수:" + strings.length,
+                Toast.LENGTH_LONG).show();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String permissions[],
+                                           int [] grantResults) {
+        super.onRequestPermissionsResult(
+                requestCode, permissions, grantResults);
+
+        AutoPermissions.Companion.parsePermissions(this, requestCode,
+                permissions, this);
+    }
+
+    class GPSListener implements LocationListener {
+        //위치 정보를 처음 받거나 갱신된 경우 호출되는 메서드
+        @Override
+        public void onLocationChanged(@NonNull Location location) {
+            //위도와 경도 가져오기
+            latitude = location.getLatitude();
+            longitude = location.getLongitude();
+        }
+
+        @Override
+        public void onStatusChanged(String provider, int status, Bundle extras) {
+            LocationListener.super.onStatusChanged(provider, status, extras);
+        }
+
+        @Override
+        public void onProviderEnabled(@NonNull String provider) {
+            LocationListener.super.onProviderEnabled(provider);
+        }
+
+        @Override
+        public void onProviderDisabled(@NonNull String provider) {
+            LocationListener.super.onProviderDisabled(provider);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
+
+        AutoPermissions.Companion.loadAllPermissions(this, 101);
+
+        LocationManager manager =
+                (LocationManager)getSystemService(Context.LOCATION_SERVICE);
+        try {
+            Location location = manager.getLastKnownLocation(
+                    LocationManager.GPS_PROVIDER);
+            if (location != null) {
+                Double latitude = location.getLatitude();
+                Double longitude = location.getLongitude();
+
+            }
+            GPSListener gpsListener = new GPSListener();
+            long minTime = 10000;
+            float minDistance = 0;
+            manager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER, minTime, minDistance, gpsListener);
+        }catch(SecurityException e){
+            Log.e("위치 정보 사용 오류", e.getLocalizedMessage());
+        }
+
 
         emailinput = (EditText)findViewById(R.id.emailinput);
         pwinput = (EditText)findViewById(R.id.pwinput);
@@ -59,7 +141,6 @@ public class LoginActivity extends AppCompatActivity {
                         try {
                             //URL 생성
                             URL url = new URL("http://192.168.10.8:9000/member/login");
-
                             //연결 객체 생성
                             HttpURLConnection con = (HttpURLConnection) url.openConnection();
 
@@ -95,7 +176,7 @@ public class LoginActivity extends AppCompatActivity {
                             JSONObject object = new JSONObject(sb.toString());
                             String error = object.getString("error");
                             //Log.e("error", error);
-                            if(error.equals("null")){
+                            if(error.equals("null")) {
                                 Log.e("결과", "로그인 성공");
                                 //로그인 성공했을 때 넘어온 데이터를 읽기
                                 String name = object.getString("name");
@@ -107,18 +188,33 @@ public class LoginActivity extends AppCompatActivity {
                                 fos.write(str.getBytes());
                                 fos.close();
 
-                                //메인 화면으로 이동
-                                //Intent intent = new Intent(LoginActivity.this, MainActivity.class);
-                                //startActivity(intent);
+                                if(latitude != null && longitude != null){
+                                    //서버에게 전송
+                                    url = new URL("http://192.168.10.8:9000/logininfo/location?"
+                                            + "latitude=" + latitude + "&longitude=" + longitude + "&email=" + email);
+                                    con = (HttpURLConnection)url.openConnection();
+                                    con.setUseCaches(false);
+                                    con.setConnectTimeout(30000);
 
+                                    br = new BufferedReader(new InputStreamReader(con.getInputStream()));
+                                    sb = new StringBuilder();
+
+                                    while(true){
+                                        String line = br.readLine();
+                                        if(line == null){
+                                            break;
+                                        }
+                                        sb.append(line + "\n");
+                                    }
+                                    br.close();
+                                    con.disconnect();
+                                }
                                 finish();
                             }else{
                                 Message message = new Message();
                                 message.obj = error;
                                 handler.sendMessage(message);
                             }
-
-
 
                         }catch(Exception e){
                             Log.e("로그인 시도 실패", e.getLocalizedMessage());
@@ -127,7 +223,6 @@ public class LoginActivity extends AppCompatActivity {
                 }.start();
             }
         });
-
 
 
         btnregister = (Button)findViewById(R.id.btnregister);
